@@ -24,6 +24,7 @@ public class Operadora {
     @Column(name = "razao_social", columnDefinition = "TEXT")
     private String razaoSocial;
 
+    @Column(name = "modalidade")
     private String modalidade;
 
     @Column(length = 2)

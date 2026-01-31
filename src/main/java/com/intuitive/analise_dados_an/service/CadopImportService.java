@@ -1,7 +1,7 @@
 package com.intuitive.analise_dados_an.service;
 
-import com.intuitive.analise_dados_an.model.Operadora; // <--- Usando sua entidade certa
-import com.intuitive.analise_dados_an.repository.OperadoraRepository; // <--- Seu repositório
+import com.intuitive.analise_dados_an.model.Operadora;
+import com.intuitive.analise_dados_an.repository.OperadoraRepository;
 import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
@@ -32,60 +32,67 @@ public class CadopImportService {
 
     @Transactional
     public void importarCadop(String caminhoArquivo) {
-        log.info("🔄 Iniciando leitura do CADOP para atualizar UFs: {}", caminhoArquivo);
+        log.info("Iniciando leitura do CADOP (UF + Modalidade): {}", caminhoArquivo);
 
-        Map<String, String> mapaUf = new HashMap<>();
+        Map<String, DadosCadop> mapaDados = new HashMap<>();
         Path path = Paths.get(caminhoArquivo);
 
-        // Leitura do CSV (usando ISO-8859-1 para acentos corretos)
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.ISO_8859_1)) {
 
             CSVReader csvReader = new CSVReaderBuilder(reader)
-                    .withCSVParser(new CSVParserBuilder().withSeparator(';').build()) // Separador ;
-                    .withSkipLines(1) // Pula cabeçalho
+                    .withCSVParser(new CSVParserBuilder().withSeparator(';').build())
+                    .withSkipLines(1)
                     .build();
 
             List<String[]> linhas = csvReader.readAll();
 
-            // Índices confirmados pelo cabeçalho que você mandou:
-            int indexRegAns = 0; // Coluna 0: REGISTRO_OPERADORA
-            int indexUf = 10;    // Coluna 10: UF
+            int indexRegAns = 0;
+            int indexModalidade = 4; // <--- NOVO
+            int indexUf = 10;
 
             for (String[] colunas : linhas) {
                 if (colunas.length > indexUf) {
-                    // Limpeza dos dados (tira aspas e espaços)
                     String regAns = colunas[indexRegAns].replace("\"", "").trim();
+                    String modalidade = colunas[indexModalidade].replace("\"", "").trim();
                     String uf = colunas[indexUf].replace("\"", "").trim();
 
-                    if (!regAns.isEmpty() && !uf.isEmpty()) {
-                        mapaUf.put(regAns, uf);
+                    if (!regAns.isEmpty()) {
+                        mapaDados.put(regAns, new DadosCadop(uf, modalidade));
                     }
                 }
             }
 
-            log.info("✅ Mapa carregado. Total de operadoras encontradas no CSV: {}", mapaUf.size());
+            log.info("Mapa carregado. Processando atualização no banco...");
 
-            // --- ATUALIZAÇÃO NO BANCO ---
             List<Operadora> todasOperadoras = operadoraRepository.findAll();
             int atualizadas = 0;
 
-            log.info("Processando {} operadoras do banco...", todasOperadoras.size());
-
             for (Operadora op : todasOperadoras) {
-                // Ajuste aqui se o seu get for diferente (ex: getRegistroAns)
                 String regAnsBanco = String.valueOf(op.getRegistroAns());
 
-                if (mapaUf.containsKey(regAnsBanco)) {
-                    op.setUf(mapaUf.get(regAnsBanco));
+                if (mapaDados.containsKey(regAnsBanco)) {
+                    DadosCadop dados = mapaDados.get(regAnsBanco);
+                    op.setUf(dados.uf);
+                    op.setModalidade(dados.modalidade);
                     atualizadas++;
                 }
             }
 
             operadoraRepository.saveAll(todasOperadoras);
-            log.info("🚀 SUCESSO! UFs atualizadas para {} operadoras.", atualizadas);
+            log.info("SUCESSO! UF e Modalidade atualizadas para {} operadoras.", atualizadas);
 
         } catch (Exception e) {
-            log.error("❌ Erro ao processar arquivo CADOP", e);
+            log.error("Erro ao processar arquivo CADOP", e);
+        }
+    }
+
+    private static class DadosCadop {
+        String uf;
+        String modalidade;
+
+        public DadosCadop(String uf, String modalidade) {
+            this.uf = uf;
+            this.modalidade = modalidade;
         }
     }
 }
